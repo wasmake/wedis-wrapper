@@ -5,6 +5,6 @@ package com.wasmake.wedis;
  */
 @FunctionalInterface
 public interface Callback {
-    void onMessage(String message);
+    void onMessage(String[] args);
 }
 

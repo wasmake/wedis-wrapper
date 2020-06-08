@@ -5,8 +5,7 @@ import org.bukkit.event.Event;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import redis.clients.jedis.Jedis;
-import redis.clients.jedis.JedisPool;
-import redis.clients.jedis.exceptions.JedisConnectionException;
+import redis.clients.jedis.JedisPoolConfig;
 
 import java.util.logging.Level;
 
@@ -17,21 +16,28 @@ public class Redis {
     private String prefix;
     private JavaPlugin plugin;
 
-    private JedisPool jedisPool;
+    private Jedis jedis;
     private RedisListener redisListener;
     private RedisCache redisCache;
+    private RedisConfig redisConfig;
+    private RedisPool redisPool;
 
-    public Redis(JavaPlugin plugin, String prefix, JedisPool jedisPool){
+    public Redis(JavaPlugin plugin, String prefix, RedisConfig redisConfig){
         this.plugin = plugin;
         this.prefix = prefix;
-        this.jedisPool = jedisPool;
-        try {
-            if(jedisPool != null && jedisPool.getResource().isConnected()) plugin.getLogger().log(Level.INFO, prefix + " is now connected to redis!");
-            if(jedisPool != null && jedisPool.getResource().isConnected()) getConsumer(jedisPool);
-            redisCache = new RedisCache(jedisPool, prefix);
-        } catch (JedisConnectionException e) {
+        this.redisConfig = redisConfig;
+        JedisPoolConfig jedisPoolConfig = new JedisPoolConfig();
+        jedisPoolConfig.setMaxIdle(redisConfig.getMaxIdle());
+        jedisPoolConfig.setMaxTotal(redisConfig.getMaxTotal());
+
+        this.jedis = new Jedis(redisConfig.getHost(), redisConfig.getPort(), redisConfig.getTimeout());
+        this.redisPool = new RedisPool(redisConfig);
+        if(!redisPool.isConnected()){
             plugin.getLogger().log(Level.SEVERE, "Failed to connect to redis, disabling plugin!");
             plugin.getServer().getPluginManager().disablePlugin(plugin);
+        } else {
+            this.redisListener = new RedisListener(plugin, prefix, jedis);
+            this.redisCache = new RedisCache(redisPool.getJedisPool(), prefix);
         }
     }
 
@@ -44,10 +50,7 @@ public class Redis {
     }
 
     public void publish(String key, String msg){
-        try (Jedis jedis = getResource()) {
-            System.out.println("Publishing msg " + msg + " to channel " + key);
-            jedis.publish(prefix, key + "|" + msg);
-        }
+        this.redisPool.publish(key, msg);
     }
 
     public void registerListener(String channel, Callback callback){
@@ -58,16 +61,8 @@ public class Redis {
         Bukkit.getScheduler().runTask(plugin, () -> Bukkit.getServer().getPluginManager().callEvent(event));
     }
 
-    public void getConsumer(JedisPool jedis){
-        redisListener = new RedisListener(plugin, prefix, jedis);
-    }
-
     public RedisCache getCache(){
         return this.redisCache;
-    }
-
-    public Jedis getResource(){
-        return jedisPool.getResource();
     }
 
 }
